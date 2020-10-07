@@ -1,0 +1,790 @@
+---
+title: "STT 481 Midterm Project"
+author: "Hailey Reese"
+date: "3/24/2020"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Introduction
+
+The goal of this final project dealt with utilizing techniques covered in class to predict house prices. The dataset came from Kaggle and consists of 79 explanatory variables that describe almost every aspect of residential homes in Ames, Iowa. To succeed in this project, the variable SalePrice must be accurately predicted for each home. 
+
+### Data
+
+The raw data contains 79 explanatory variables that describe almost all the different aspects of a house you could think of. Some of these explanatory variables included LotArea, OverallQual, and YearBuilt. The raw data included over 2,000 observations, yet some of these had missing values.
+
+A lot of the variables in the raw data were categorical, so the first thing I did was remove all of these variables. This way the only thing I had to deal with was quantitative data so it would be easier to just make all the models of a regression type. The second step in cleaning the data was to remove any of the observations that had missing values. Once this was done I considered the dataset to be clean enough to use for analysis. After cleaning the data there were 2,919 observations and 24 explanatory variables left to use. 
+
+The data was then split into two separate data sets, a training set and a testing set. The training data set contained 1,460 observations, and the testing data set contained 1,459 observations. This allowed me to fit a model based off the training data and then utilize that model to predict values for the testing data set.
+
+### KNN
+
+Step 1: Load in the data and split into trainX and testX in order to use in knn regression method
+```{r}
+#Step 1
+library(FNN)
+set.seed(1)
+test <- read.csv("test.csv")
+train.data <- read.csv("train_new.csv")
+test.data <- read.csv("test_new.csv")
+```
+
+```{r}
+trainX <- train.data[,-24]
+testX <- test.data[,-24]
+trainY <- train.data[, 24]
+testY <- test.data[, 24]
+```
+
+Step 2: Find the K value that has the smallest CV-estimated test error
+
+```{r}
+error <- rep(0, 50)
+for (k in 1:50){
+    pred <- knn.reg(train = trainX, test = testX, y = trainY, k = k)
+    vals <- pred$pred
+    error[k] <-  mean((vals - test.data$SalePrice)^2)
+}
+print(min(error))
+print(which.min(error))
+```
+
+I have chosen the range 1-50 as possible values of K to find which one will produce the smallest CV test error. Based off of the results above, we see that that when K = 50 it has the smallest test error of about 30477773513.
+
+
+Step 4: Make predictions for the test data set based off of our training data set and k = 50
+```{r}
+#Step 4
+pred <- knn.reg(train = trainX, test = testX, y = train.data$SalePrice, k = 50)
+head(pred$pred, 50)
+```
+
+
+```{r}
+mean((pred$pred - test.data$SalePrice)^2)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = pred$pred)
+write.csv(submit, file="Submission_KNN.csv", row.names = F)
+```
+
+
+### Linear Regression
+
+Step 1: Fit the linear regression model
+```{r}
+#Step 1 
+fit <- lm(SalePrice ~. -MoSold-HalfBath-BsmtHalfBath-GarageArea-LowQualFinSF-FullBath-BsmtFinSF2, data = train.data)
+summary(fit)
+```
+
+```{r}
+plot(fit)
+```
+
+Above is the summary of the fitted model, you can see I have only chosen to utilize the predictors that have some significance in predicting SalePrice in order to hopefully decrease the test error and get a more accurate prediction. Here we can see that some of the most significant predictors include OverallQual, X1stFlrSF, and X2ndFlrSF.
+
+As seen in the residual plots, there seem to be three outliers at observations 524, 692, and 1299.
+
+
+Step 2: Make predictions for the test data set based off of our fitted model
+
+```{r}
+pred2 <- predict(fit, type = "response", newdata = test.data)
+head(pred2, 50)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = pred2)
+write.csv(submit, file="Submission_LR.csv", row.names = F)
+```
+
+Step 3: Find the coefficients of the fitted model
+```{r}
+#Step 3
+coef(fit)
+```
+
+Step 4: Find the CV-estimated test error of the linear regression model
+```{r}
+#Step 4
+library(DAAG)
+out <- CVlm(train.data, fit)
+cv.error <- mean((train.data$SalePrice - out$cvpred)^2)
+```
+
+```{r}
+cv.error
+```
+We see that the linear regression model has a CV-estimated test error of 1.4e+09.
+
+### Shrinkage (Ridge & Lasso)
+
+## Ridge
+
+Step 1: Create model matrix and dummy variables of training and test data 
+```{r}
+library(glmnet)
+#Step 1
+set.seed(1)
+train.mat <- model.matrix(SalePrice~., data = train.data)[,-1]
+test.mat <- model.matrix(SalePrice~., data = test.data)[,-1]
+head(train.mat)
+```
+
+Step 2: Fit the model from cv.glmnet and pick the best lambda value from our model. Here we are using a model with 10 folds. Also, since this is a ridge model we set alpha = 0
+
+```{r}
+#Step 2
+mod.ridge <- cv.glmnet(train.mat, train.data$SalePrice, alpha=0, nfolds = 10)
+lambda.best <- mod.ridge$lambda.min
+lambda.best
+```
+
+We see that the best lambda value for our model is 10002.
+
+```{r}
+plot(mod.ridge)
+```
+
+Step 3: Find the corresponding CV-estimated test error for our best lambda value
+```{r}
+#Step 3
+i <- which(mod.ridge$lambda == lambda.best)
+cv.error <- mod.ridge$cvm[i]
+cv.error
+```
+
+We see that the CV-estimated test error for our model is 1.39e+09.
+
+
+Step 4: Find the coefficients of our model with the best lambda value
+```{r}
+#Step 4
+coef(mod.ridge, s = lambda.best)
+```
+
+Step 5: Make predictions for the test data set based off of our fitted model, test matrix, and best lambda value
+```{r}
+#Step 5
+ridge.pred <- predict(mod.ridge, newx = test.mat, s = lambda.best)
+head(ridge.pred)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = ridge.pred)
+write.csv(submit, file="Submission_Ridge.csv", row.names = F)
+```
+
+
+## Lasso
+
+Step 1: Create model matrix and dummy variables of training and test data 
+```{r}
+#Step 1
+library(glmnet)
+train.mat <- model.matrix(SalePrice~., data = train.data)[,-1]
+test.mat <- model.matrix(SalePrice~., data = test.data)[,-1]
+head(train.mat)
+```
+
+Step 2: Fit the model from cv.glmnet and pick the best lambda value from our model. Here we are using a model with 10 folds. Also, since this is a lasso model we set alpha = 1
+```{r}
+#Step 2
+mod.lasso <- cv.glmnet(train.mat, train.data$SalePrice, alpha = 1, nfolds = 10)
+lambda.best <- mod.lasso$lambda.min
+lambda.best
+```
+
+We see that the best lambda value for our model is 546.
+
+```{r}
+plot(mod.lasso)
+```
+
+Step 3: Find the corresponding CV-estimated test error for our best lambda value
+```{r}
+#Step 3
+i <- which(mod.lasso$lambda == lambda.best)
+cv.error <- mod.lasso$cvm[i]
+cv.error
+```
+
+We see that the CV-estimated test error for our model is 1.45e+09, which is slightly higher than the Ridge model CV-estimated test error
+
+Step 4: Find the coefficients of our model
+```{r}
+#Step 4
+predict(mod.lasso, s = lambda.best, type = "coefficients")
+```
+
+Step 5: Make predictions for the test data set based off of our fitted model, test matrix, and best lambda value
+```{r}
+#Step 5
+lasso.pred <- predict(mod.lasso, newx = test.mat, s=lambda.best)
+head(lasso.pred)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = lasso.pred)
+write.csv(submit, file="Submission_Lasso.csv", row.names = F)
+```
+
+### Subset Selection (Best, Forward, Backward)
+
+## Best 
+
+Step 1: Use regsubsets to select the best model to predict SalePrice. Here we set nvmax = 23 since we can have up to 23 predictors in our model.
+```{r}
+#Step 1
+library(leaps)
+mod.best <- regsubsets(SalePrice ~ ., data = train.data, nvmax = 23)
+mod.summary <- summary(mod.best)
+mod.summary
+```
+
+Step 2: Find the model size for best cp, BIC, and adjr2
+```{r}
+#Step 2
+cp <- which.min(mod.summary$cp)
+cp
+```
+
+```{r}
+bic <- which.min(mod.summary$bic)
+bic
+```
+
+```{r}
+adjr2 <- which.max(mod.summary$adjr2)
+adjr2
+```
+
+```{r}
+plot(mod.summary$cp, xlab = "Subset Size", ylab = "Cp", pch = 20, type = "l")
+points(16, mod.summary$cp[16], pch = 4, col = "red", lwd = 7)
+```
+
+```{r}
+plot(mod.summary$bic, xlab = "Subset Size", ylab = "BIC", pch = 20, type = "l")
+points(13, mod.summary$bic[13], pch = 4, col = "red", lwd = 7)
+```
+
+```{r}
+plot(mod.summary$adjr2, xlab = "Subset Size", ylab = "Adjusted R2", pch = 20, type = "l")
+points(18, mod.summary$adjr2[18], pch = 4, col = "red", lwd = 7)
+```
+
+Step 3: Find the coefficients for our best model for each of the model sizes found in step 2
+
+```{r}
+#Step 3
+coefficients(mod.best, id=16)
+```
+
+```{r}
+coefficients(mod.best, id=13)
+```
+
+```{r}
+coefficients(mod.best, id=18)
+```
+
+
+
+## Forward
+
+Step 1: Use regsubsets to select the best model to predict SalePrice. Here we set nvmax = 23 since we can have up to 23 predictors in our model. We also add in the argument method = "forward" to utilize forward stepwise selecton.
+```{r}
+#Step 1
+mod.fwd <- regsubsets(SalePrice ~ ., data = train.data, nvmax = 23, method = "forward")
+mod.summary2 <- summary(mod.fwd)
+mod.summary2
+```
+
+Step 2: Find the model size for best cp, BIC, and adjr2
+```{r}
+#Step 2
+cp2 <- which.min(mod.summary2$cp)
+cp2
+```
+
+```{r}
+bic2 <- which.min(mod.summary2$bic)
+bic2
+```
+
+```{r}
+adjr2_2 <- which.max(mod.summary2$adjr2)
+adjr2_2
+```
+
+```{r}
+plot(mod.summary2$cp, xlab = "Subset Size", ylab = "Cp", pch = 20, type = "l")
+points(16, mod.summary2$cp[16], pch = 4, col = "red", lwd = 7)
+```
+
+```{r}
+plot(mod.summary2$bic, xlab = "Subset Size", ylab = "BIC", pch = 20, type = "l")
+points(13, mod.summary2$bic[13], pch = 4, col = "red", lwd = 7)
+```
+
+```{r}
+plot(mod.summary2$adjr2, xlab = "Subset Size", ylab = "Adjusted R2", pch = 20, type = "l")
+points(18, mod.summary2$adjr2[18], pch = 4, col = "red", lwd = 7)
+```
+
+Based off of the plots and model sizes, we see that the results for the Forward method were the same as the results for the Best method. Just to ensure that the model is fitted the same, we will still find the coefficients for the forward model for each of the model sizes we found in step 2.
+
+
+Step 3: Find the coefficients for our best model for each of the model sizes found in step 2
+```{r}
+#Step 3
+coefficients(mod.fwd, id=16)
+```
+
+```{r}
+coefficients(mod.fwd, id=13)
+```
+
+```{r}
+coefficients(mod.fwd, id=18)
+```
+
+We see that all the coefficients for each of the different model sizes are the same as the coefficients from the Best model, therefore our predictions for the Forward model would be the exact same as the Best model, so we shall save this step for last.
+
+## Backward
+
+Step 1: Use regsubsets to select the best model to predict SalePrice. Here we set nvmax = 23 since we can have up to 23 predictors in our model. We also add in the argument method = "backward" to utilize backward stepwise selecton.
+```{r}
+#Step 1
+mod.bwd <- regsubsets(SalePrice ~ ., data = train.data, nvmax = 23, method = "backward")
+mod.summary3 <- summary(mod.bwd)
+mod.summary3
+```
+
+Step 2: Find the model size for best cp, BIC, and adjr2
+```{r}
+cp3 <- which.min(mod.summary3$cp)
+cp3
+```
+
+```{r}
+bic3 <- which.min(mod.summary3$bic)
+bic3
+```
+
+```{r}
+adjr2_3 <- which.max(mod.summary3$adjr2)
+adjr2_3
+```
+
+```{r}
+plot(mod.summary3$cp, xlab = "Subset Size", ylab = "Cp", pch = 20, type = "l")
+points(16, mod.summary3$cp[16], pch = 4, col = "red", lwd = 7)
+```
+
+```{r}
+plot(mod.summary3$bic, xlab = "Subset Size", ylab = "BIC", pch = 20, type = "l")
+points(13, mod.summary3$bic[13], pch = 4, col = "red", lwd = 7)
+```
+
+```{r}
+plot(mod.summary3$adjr2, xlab = "Subset Size", ylab = "Adjusted R2", pch = 20, type = "l")
+points(18, mod.summary3$adjr2[18], pch = 4, col = "red", lwd = 7)
+```
+
+Again, we see that based off of the plots and the model sizes the results for the Backward method are the same as the results from the Forward and Best methods. Just to ensure that the model is fitted the same, we will still find the coefficients for the backward model for each of the model sizes we found in step 2.
+
+
+Step 3: Find the coefficients for our best model for each of the model sizes found in step 2
+```{r}
+#Step 3
+coefficients(mod.bwd, id=16)
+```
+
+```{r}
+coefficients(mod.bwd, id=13)
+```
+
+```{r}
+coefficients(mod.bwd, id=18)
+```
+
+We see that all the coefficients for each of the different model sizes are the same as the coefficients from the Forward and Best models, therefore our predictions for the Backward model would be the exact same as the Forward and Best models, so we shall save this step for last.
+
+
+Since all three methods will have the same results, we will only have to make 3 predictions, one for each of the model sizes, rather than making 9 predictions, one for each method and for each of the model size. 
+
+Step 4: Decide which model size is the optimal model through cross validation
+```{r}
+#Step 4
+k = 10
+set.seed(1)
+folds = sample(1:k,nrow(train.data),replace=TRUE)
+cv.errors=matrix(NA,k,23, dimnames=list(NULL, paste(1:23)))
+```
+
+```{r}
+predict.regsubsets <- function(object, newdata , id, ...){
+  form <- as.formula(object$call[[2]])
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  xvars <- names(coefi)
+  return(mat[,xvars] %*% coefi)
+}
+```
+
+```{r}
+for(j in 1:k){
+  mod <- regsubsets(SalePrice ~ ., data = train.data[folds != j,], nvmax = 23)
+  for(i in 1:23){
+    pred <- predict.regsubsets(mod, train.data[folds == j, ], id = i)
+    cv.errors[j, i] = mean((train.data$SalePrice[folds == j] - pred)^2)
+  }
+}
+```
+
+```{r}
+means <- apply(cv.errors, 2, mean)
+means
+```
+
+We see that through cross validation the most optimal model sizes, from the three options we found in step 2, are size 16 or 18. Both of these model sizes have a CV-estimated test error of 1.44e+09. Since they both had the same CV-estimated test error we will make predictions for both model sizes and see how they perform in Kaggle.
+
+Step 5: Make predictions for our test data set based off of our model and for each of the optimal model sizes found in step 4
+```{r}
+#Step 5
+cp_pred <- predict.regsubsets(mod.best, newdata = test.data, id = cp)
+head(cp_pred)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = cp_pred)
+write.csv(submit, file="Submission_Subset_16.csv", row.names = F)
+```
+
+
+```{r}
+adjr2_pred <- predict.regsubsets(mod.best, newdata = test.data, id = adjr2)
+head(adjr2_pred)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = adjr2_pred)
+write.csv(submit, file="Submission_Subset_18.csv", row.names = F)
+```
+
+After looking at the performance of each of the models in Kaggle, we see that the model with size 18 performs slightly better.
+
+
+### Generalized Additive Models
+
+Step 1: Fit a GAM model utilizing all the predictors to predict SalePrice.
+
+```{r}
+library(gam)
+set.seed(1)
+gam.fit <- gam(SalePrice ~ ., data = train.data)
+summary(gam.fit)
+```
+
+Analyzing this model we see that only about 12 of the predictors are the most significant. So, to develop a better GAM model we will utilize forward stepwise selection in order to determine the optimal size of the model. Since a forward stepwise model was already done above, we shall refer back to that then using it all over again. 
+
+When looking back at the selection methods, we found that the model of size 18 performed the best, so we shall utilize that size 18 also for the GAM model. The argument nvmax = 23 since we can have up to 23 predictors in our model.
+
+Step 2: Find the 18 coefficients in the GAM model.
+
+```{r}
+library(leaps)
+fit <- regsubsets(SalePrice ~ ., data = train.data, nvmax = 30, method = "forward")
+co <- coef(fit, id = 18)
+names(co)
+```
+
+Step 3: Refit the GAM model with the 18 coefficients found above.
+
+```{r}
+gam.fit <- gam(SalePrice ~ LotArea + OverallQual + OverallCond + YearBuilt + BsmtFinSF1 + X1stFlrSF + X2ndFlrSF + BsmtFullBath + BedroomAbvGr + KitchenAbvGr + TotRmsAbvGrd + GarageCars + WoodDeckSF + YearRemodAdd + BsmtFinSF2 + BsmtUnfSF + FullBath + Fireplaces, data = train.data)
+par(mfrow = c(2, 3))
+plot(gam.fit, se = T, col = "red")
+```
+
+Step 4: Make predictions for our test data set based off of our updated GAM model
+
+```{r}
+gam_pred <- predict(gam.fit, test.data)
+head(gam_pred)
+```
+
+Step 5: 
+
+```{r}
+mean((test.data$SalePrice - gam_pred)^2)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = gam_pred)
+write.csv(submit, file="Submission_GAM.csv", row.names = F)
+```
+
+### Regression Trees
+
+Step 1: Build a large tree utilizing all predictors
+```{r}
+library(tree)
+set.seed(1)
+fit <- tree(SalePrice ~ ., data = train.data)
+summary(fit)
+```
+
+From this summary, we see that the tree has 12 terminal nodes, and a training MSE of 1.481e+09. We can also see that the actual predictors used to build the tree were OverallQual, GarageCars, X2ndFlrSF, BsmtFinSF1, GarageArea, and YearRemodAdd.
+
+```{r}
+fit
+```
+
+```{r}
+plot(fit)
+text(fit, pretty = 0, cex = .75)
+```
+
+Step 2: Choose the best tree size using a 10-fold CV
+
+```{r}
+cv.sale <- cv.tree(fit, FUN = prune.tree, K = 10)
+cv.sale
+```
+
+```{r}
+plot(cv.sale$size, cv.sale$dev, type = "b")
+```
+
+```{r}
+best.size <- cv.sale$size[which.min(cv.sale$dev)]
+best.size
+```
+
+The tree size of 12 corresponds to the lowest cross-validated classification error rate.
+
+Step 3: Prune the tree
+
+Since the cross-validation did not lead to a selection of a pruned tree, a pruned tree with five terminal nodes was created.
+
+```{r}
+prune.sale <- prune.tree(fit, best = 5)
+par(mfrow = c(1,1))
+plot(prune.sale)
+text(prune.sale, pretty = 0, cex = .75)
+```
+
+```{r}
+summary(prune.sale)
+```
+
+From this summary of the pruned tree, we see that the tree has 5 terminal nodes, and a training MSE of 2.112e+09. We can also see that the actual predictors used to build the tree were OverallQual and GarageCars.
+
+
+Step 4: Compare the orignal and pruned trees
+
+When comparing the two different trees, the orignal tree which used all the possible predictors had a training MSE of 1.481e+09, while the pruned tree had a training MSE of 2.112e+09.
+
+Step 5: Make predictions for our test data set based off of both original and pruned tree
+
+```{r}
+pred <- predict(fit, newdata = test.data)
+mean((pred - test.data$SalePrice)^2)
+```
+
+
+```{r}
+pred2 <- predict(prune.sale, newdata = test.data)
+mean((pred2 - test.data$SalePrice)^2)
+```
+
+From the test errors we see that the pruned tree actually performed better on the test data set.
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = pred)
+write.csv(submit, file="Submission_Tree.csv", row.names = F)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = pred2)
+write.csv(submit, file="Submission_PrunedTree.csv", row.names = F)
+```
+
+### Bagging
+
+Step 1: Utilize the bagging tree method to fit a model on the training data. Here the argument mtry = 23 since there are 23 predictors used, and importance = TRUE in order to see which predictors are the most important.
+
+```{r}
+library(randomForest)
+set.seed(1)
+bag.sale <- randomForest(SalePrice ~ ., data = train.data, mtry = 23, ntree = 1000, importance = TRUE)
+bag.sale
+```
+
+The bagging model had used 1000 trees and had a training MSE of 891329169.
+
+Step 2: Determine which predictors had the most importance
+
+```{r}
+importance(bag.sale)
+```
+
+```{r}
+varImpPlot(bag.sale)
+```
+
+After analyzing the plots and chart, it is easy to see that the most important predictors include OverallQual, X2ndFlrSF, and X1stFlrSF.
+
+Step 3: Make a prediction on the test data set using the bagging method
+
+```{r}
+yhat.bag <- predict(bag.sale, newdata = test.data)
+head(yhat.bag)
+```
+
+Step 4: Calculate the test error 
+
+```{r}
+mean((yhat.bag - test.data$SalePrice)^2)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = yhat.bag)
+write.csv(submit, file="Submission_Bagging.csv", row.names = F)
+```
+
+### Random Forest
+
+Step 1: Utilize the random forest tree method to fit a model on the training data. Here the argument mtry = round(sqrt(23)) since there are 23 predictors used and we use the sqrt since it is a random forest model, and importance = TRUE in order to see which predictors are the most important.
+
+```{r}
+set.seed(1)
+rf.sale <- randomForest(SalePrice ~ ., data = train.data, mtry = round(sqrt(23)), ntree = 1000, importance = TRUE)
+rf.sale
+```
+
+The random forest model had used 1000 trees and had a training MSE of 866190267.
+
+Step 2: Determine which predictors had the most importance
+```{r}
+importance(rf.sale)
+```
+
+```{r}
+varImpPlot(bag.sale)
+```
+
+After analyzing the plots and chart, it is easy to see that the most important predictors include OverallQual, X2ndFlrSF, and X1stFlrSF.
+
+Step 3: Make a prediction on the test data set using the bagging method
+
+```{r}
+yhat.rf <- predict(rf.sale, newdata = test.data)
+head(yhat.rf)
+```
+
+Step 4: Calculate the test error 
+```{r}
+mean((yhat.rf - test.data$SalePrice)^2)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = yhat.rf)
+write.csv(submit, file="Submission_RandomForest.csv", row.names = F)
+```
+
+### Boosting
+
+Step 1: Utilize the boosting tree method to fit a model on the training data. Here the argument distribution = "gaussian" since this is a regression model, 4 splits are used, and 10 cv folds.
+
+```{r}
+library(gbm)
+set.seed(1)
+gbm.cv.sale <- gbm(SalePrice ~ ., data = train.data, distribution = "gaussian", shrinkage = 0.01, n.tree = 1000, interaction.depth = 4, cv.folds = 10)
+gbm.cv.sale
+```
+
+
+```{r}
+which.min(gbm.cv.sale$cv.error)
+```
+
+Step 2: Determine which predictors had the most importance
+
+```{r}
+summary(gbm.cv.sale)
+```
+
+The predictors OverallQual and X1stFlrSF seem to be the most important.
+
+Step 3: Make a prediction on the test data set using the boosting method
+
+```{r}
+yhat.gbm <- predict(gbm.cv.sale, newdata = test.data, n.trees = which.min(gbm.cv.sale$cv.error))
+head(yhat.gbm)
+```
+
+Step 4: Calculate the test error 
+
+```{r}
+mean((yhat.gbm - test.data$SalePrice)^2)
+```
+
+```{r}
+submit <- data.frame(Id = test$Id, SalePrice = yhat.gbm)
+write.csv(submit, file="Submission_Boosting.csv", row.names = F)
+```
+
+### Prediction Analysis
+
+Before submitting all predictions to Kaggle, the CV estimates of the test errors were analyzed. The KNN model had the lowest test error, so therefore it is presumed that this method will perform the best. Logically thinking, neighborhoods tend to have houses that are similar, so it would make sense for a house's price to be similar to the ones it is closest too.
+
+
+After submitting all predicitons to Kaggle, the Boosting model performed the best with only a .14893 error rate in Kaggle, and the Linear Regression model performed the worst with a .60538 error rate in Kaggle.
+
+Linear regression may have performed the worst since I decided to only use specific variables, also a quantitative variable like housing prices tend to not follow a simple linear path. Boosting on the other hand, which performed the best, may have performed better than all the other methods because of the parameters used. The model used on the training data set allowed the model to go through the data and learn the fit of the data slowly.
+  
+### Technical Issues & Challenges
+
+There were a few main challenges that came about during this project, the first being cleaning the raw data. As stated before the raw data contained many categorical variables and missing data points. So, determining the best way to deal with these was the first issue. There were multiple ways to handle this, but I thought the easiest way was to just remove them. 
+
+Another issue I came across was when I was dealing with my KNN model. The first step in developing my model was to find which k value would in return have the lowest test error. Originally I was getting test errors of ~98%, which is obviously not very good. What I had failed to realize was that this was because I was trying to use a classification KNN method instead of a regression KNN method. Once this issue was fixed I no longer had such high test error rates.
+
+### Conclusion
+
+There were 9 different methods that were used to try and predict the prices of homes in the testing data set. These methods were KNN, Linear Regression, Subset Selection, Generalized Additive Models, Shrinkage, Regression Trees, Bagging, Random Forest, and Boosting. The performance of these models were as follows (in order): 
+
+1. Boosting
+2. Random Forest
+3. Bagging
+4. Regression Trees
+5. KNN
+6. Shrinkage - Ridge
+7. GAM
+8. Subset Selection
+9. Shrinkage - Lasso
+10. Linear Regression
+
+For quite a few of the models, the most significant predictors that were consistently significant included OverallQual, X1stFlrSF, and X2ndFlrSF.
+
+Overall, majority of the models performed very well, yet as seen on Kaggle there were many submissions with an error rate of 0.00%, so it is obvious that there could have been improvements made to these models so they could predict more accurately.
+
+### Further Questions
+
+In majority of the models I was only able to fit a basic model that utilized all of the predictors, so I would have liked to see how the results would change if only certain predictors were included. 
+
+Another thought I had was the different ways of cleaning the data. All the categorical variables and observations with missing values were just completely removed, but I thought if there were other ways to deal with this rather than just completely removing them.
+
+Lastly, I saw on Kaggle I saw many submissions with an error rate of 0.00%, while my test error was still very low I wondered as to how it was possible to create a perfect model that accurately predicted every single one of the house prices.
