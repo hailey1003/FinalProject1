@@ -2,7 +2,7 @@
 
 # Goal: Predict the housing price of each home in Ames, Iowa by utilizing the 79 unique explanatory variables
 
-For this project I utilized 12 different methods in order to accuractely predict the housing price. These methods were:
+For this project I utilized 10 different methods in order to accuractely predict the housing price. These methods were:
 
                                      Kth Nearest Neighbor
                                      
@@ -12,11 +12,7 @@ For this project I utilized 12 different methods in order to accuractely predict
                                      
                                      Shrinkage - Lasso
                                      
-                                     Subset Selection - Best
-                                     
-                                     Subset Selection - Forward
-                                     
-                                     Subset Selection - Backward
+                                     Subset Selection - (Best, Forward, & Backward)
                                      
                                      Generalized Additive Models
                                      
