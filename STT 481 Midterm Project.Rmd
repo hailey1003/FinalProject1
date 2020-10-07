@@ -764,7 +764,7 @@ Another issue I came across was when I was dealing with my KNN model. The first 
 
 ### Conclusion
 
-There were 9 different methods that were used to try and predict the prices of homes in the testing data set. These methods were KNN, Linear Regression, Subset Selection, Generalized Additive Models, Shrinkage, Regression Trees, Bagging, Random Forest, and Boosting. The performance of these models were as follows (in order): 
+There were 10 different methods that were used to try and predict the prices of homes in the testing data set. These methods were KNN, Linear Regression, Subset Selection, Generalized Additive Models, Shrinkage, Regression Trees, Bagging, Random Forest, and Boosting. The performance of these models were as follows (in order): 
 
 1. Boosting
 2. Random Forest
